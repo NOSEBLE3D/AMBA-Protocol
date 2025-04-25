@@ -75,14 +75,6 @@ AHB uses a **two-phase pipelining mechanism** where the address and data phases 
   - Write data is presented by the master
   - Read data is returned by the slave
 
-### Signal Timing:
-```
-Clock     : _|-|_|-|_|-|_|-|_
-Address   : --<A1>--<A2>--<A3>
-WriteData : ----<D1>--<D2>--<D3>
-ReadData  : ----<D1>--<D2>--<D3>
-```
-
 ---
 
 ## 5. Incremental Bursts (INCR)
