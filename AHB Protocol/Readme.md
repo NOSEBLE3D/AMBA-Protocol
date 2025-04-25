@@ -1,4 +1,6 @@
 # AHB Protocol Documentation
+Last Updated: 2025-04-25 10:00:43
+Author: NOSEBLE3D
 
 ---
 
@@ -9,8 +11,7 @@
 4. Two-Phase Pipelining in AHB
 5. Incremental Bursts (INCR)
 6. Wrapping Bursts (WRAP)
-7. Handling Wait States
-8. Testbench Overview
+7. System Operation
 
 ---
 
@@ -44,160 +45,110 @@ The **AHB (Advanced High-performance Bus)** is part of the **AMBA (Advanced Micr
 
 ### Key Components:
 1. **AHB Master**:
-   - Generates addresses, control signals (`HTRANS`, `HWRITE`, etc.), and data (`HWDATA`).
-   - Implements **two-phase pipelining** for efficient data transfers.
+   - Generates addresses and control signals (`HTRANS`, `HWRITE`, etc.)
+   - Implements **two-phase pipelining** for efficient data transfers
+   - Manages burst transfers and address generation
 
 2. **AHB Slave**:
-   - Receives and processes transactions from the master.
-   - Simulates **wait states** using the `HREADY` signal.
+   - Receives and processes transactions from the master
+   - Implements memory operations
+   - Manages data phase timing
 
 3. **AHB Top Module**:
-   - Integrates the master and slave components.
-   - Facilitates communication between them.
-
-4. **Testbench**:
-   - Verifies the functionality of the design.
-   - Tests burst transfers (increment and wrap) and single transfers.
+   - Integrates the master and slave components
+   - Handles signal routing and interconnection
 
 ---
 
 ## 4. Two-Phase Pipelining in AHB
 
 ### What is Two-Phase Pipelining?
-AHB uses a **two-phase pipelining mechanism** to overlap the address and data phases of a transfer. This increases throughput by utilizing the bus more efficiently.
+AHB uses a **two-phase pipelining mechanism** where the address and data phases of consecutive transfers overlap, improving bus utilization and throughput.
 
-### How It Works in Your Code:
-- **Master Module**:
-  - `HADDR` (address) and `HWDATA` (write data) are handled separately.
-  - A **data latch (`data_latch`)** delays the data until the next cycle to align with the address phase.
-  - Example:
-    ```verilog
-    HWDATA <= data_latch; // Delayed data for pipelining
-    data_latch <= WDATA;  // Store new data for the next cycle
-    ```
+### Implementation Details:
+- **Address Phase**:
+  - Master presents address and control signals
+  - These signals are registered by the slave
 
-- **Slave Module**:
-  - The `HREADY` signal ensures the master waits until the slave is ready for the next transfer.
+- **Data Phase**:
+  - Occurs one cycle after the address phase
+  - Write data is presented by the master
+  - Read data is returned by the slave
+
+### Signal Timing:
+```
+Clock     : _|-|_|-|_|-|_|-|_
+Address   : --<A1>--<A2>--<A3>
+WriteData : ----<D1>--<D2>--<D3>
+ReadData  : ----<D1>--<D2>--<D3>
+```
 
 ---
 
 ## 5. Incremental Bursts (INCR)
 
-### What are Incremental Bursts?
-Incremental bursts transfer a sequence of data words to/from sequential addresses. The address increments after each data transfer.
+### Implementation:
+- Supports INCR4 bursts (4-beat transfers)
+- Address increments based on transfer size
+- Sequential data transfers
 
-### Implementation in Your Code:
-- **Master Module**:
-  - The `increment_address_generator` function calculates the next address:
-    ```verilog
-    increment_address_generator = current_addr + num_bytes;
-    ```
-  - Used during the `SEQ` state to update `HADDR`.
-
-- **Testbench**:
-  - Example INCR4 burst:
-    ```verilog
-    burst_data[1] = 32'h1111_0001;
-    burst_data[2] = 32'h2222_0002;
-    burst_data[3] = 32'h3333_0003;
-    burst_data[4] = 32'h4444_0004;
-    ahb_write(32'h0000_0020, 1, 4, 3'b011, 3'b010);
-    ```
+### Address Generation:
+```verilog
+case (burst)
+  3'b011: // INCR4
+    next_addr = current_addr + (1 << SIZE);
+endcase
+```
 
 ---
 
 ## 6. Wrapping Bursts (WRAP)
 
-### What are Wrapping Bursts?
-Wrapping bursts are similar to incremental bursts but with an additional feature: the address wraps around to the start of a predefined boundary when it exceeds this boundary.
+### Implementation:
+- Supports WRAP4 and WRAP8 bursts
+- Address wraps at boundaries based on burst size
+- Maintains fixed-size address windows
 
-### Implementation in Your Code:
-- **Master Module**:
-  - The `wrap_address_generator` function calculates the wrapped address:
-    ```verilog
-    boundary = (curr_addr / (num_bytes * burst_len)) * (num_bytes * burst_len);
-    next_addr = curr_addr + burst_len;
-    if ((next_addr & offset_mask) == 0)
-      wrap_address_generator = boundary;
-    else
-      wrap_address_generator = next_addr;
-    ```
-
-- **Testbench**:
-  - Example WRAP4 burst:
-    ```verilog
-    burst_data[5] = 32'hAAAA_0001;
-    burst_data[6] = 32'hBBBB_0002;
-    burst_data[7] = 32'hCCCC_0003;
-    burst_data[8] = 32'hDDDD_0004;
-    ahb_write(32'h0000_0030, 5, 4, 3'b010, 3'b010);
-    ```
+### Address Calculation:
+```verilog
+boundary = (curr_addr / (num_bytes * burst_len)) * (num_bytes * burst_len);
+next_addr = curr_addr + burst_len;
+wrap_addr = (next_addr > boundary_end) ? boundary : next_addr;
+```
 
 ---
 
-## 7. Handling Wait States
+## 7. System Operation
 
-### What are Wait States?
-Wait states introduce delays in the slave's response, signaling that it is not ready to complete a transfer.
+### Transfer Types:
+1. **Single Transfer**:
+   - One address phase followed by one data phase
+   - No burst operation
 
-### Implementation in Your Code:
-- **Slave Module**:
-  - The `wait_state_counter` simulates wait states:
-    ```verilog
-    if (wait_state_counter > 0) begin
-      HREADY <= 1'b0;
-      wait_state_counter <= wait_state_counter - 1;
-    end else begin
-      HREADY <= 1'b1;
-    end
-    ```
+2. **Burst Transfer**:
+   - One address phase followed by multiple data phases
+   - Supports both INCR and WRAP types
 
-- **Testbench**:
-  - The master waits for `HREADY` before proceeding:
-    ```verilog
-    while (!DUT.master.HREADY) @(posedge HCLK);
-    ```
+### Control Signals:
+- **HTRANS[1:0]**:
+  - IDLE   (2'b00)
+  - BUSY   (2'b01)
+  - NONSEQ (2'b10)
+  - SEQ    (2'b11)
 
----
+- **HREADY**:
+  - Indicates slave readiness
+  - Controls transfer progression
 
-## 8. Testbench Overview
+### Memory Operations:
+- **Write Operation**:
+  ```verilog
+  if (valid_transfer && addr_phase_write)
+    mem[addr_phase_addr] <= HWDATA;
+  ```
 
-### Key Features of Testbench:
-1. **Write Task (`ahb_write`)**:
-   - Executes single or burst writes.
-   - Example:
-     ```verilog
-     ahb_write(32'h0000_0010, 0, 1, 3'b000, 3'b010);
-     ```
-
-2. **Read Task (`ahb_read`)**:
-   - Executes single or burst reads.
-   - Example:
-     ```verilog
-     ahb_read(32'h0000_0010, 3'b000, 3'b010);
-     ```
-
-3. **Burst Data Simulation**:
-   - Tests both incremental and wrapping bursts.
-
-4. **Wait State Handling**:
-   - Ensures the master waits for `HREADY` before proceeding.
-
----
-
-## Summary
-
-### Key Takeaways:
-1. **AHB Protocol**:
-   - High-performance, pipelined, burst-based design.
-
-2. **Features Implemented**:
-   - Two-phase pipelining.
-   - Incremental and wrapping bursts.
-   - Wait state simulation.
-
-3. **Comparison with APB and AXI**:
-   - AHB balances simplicity and performance, making it ideal for on-chip memory and peripherals.
-
-4. **Testbench Validation**:
-   - Comprehensive testing ensures functionality and protocol compliance.
+- **Read Operation**:
+  ```verilog
+  if (valid_transfer && !addr_phase_write)
+    HRDATA <= mem[addr_phase_addr];
+  ```
