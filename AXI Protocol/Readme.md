@@ -1,15 +1,15 @@
-# AXI4 Protocol Implementation on Zynq-7000 SoC
+# AXI Protocol Implementation on Zynq-7000 SoC
 **Date: 2025-06-01 11:17:16**
 **Author: NOSEBLE3D**
 **Target Device: xc7z014sclg484-2**
 
 ## Project Overview
-Implementation of a complete AXI4 protocol interface consisting of both master and slave modules targeting the Xilinx Zynq-7000 SoC platform. The design supports full AXI4 specification with comprehensive burst operations and independent channel architecture.
+Implementation of a complete AXI protocol interface consisting of both master and slave modules targeting the Xilinx Zynq-7000 SoC platform. The design supports full AXI specification with comprehensive burst operations and independent channel architecture.
 
 ## Architecture Details
 
 ### 1. Channel Implementation
-The design implements all five AXI4 channels:
+The design implements all five AXI channels:
 
 #### Write Channels:
 - **Write Address Channel (AW)**
@@ -128,7 +128,7 @@ Suitable for:
 - Custom peripheral interfaces
 
 ## Implementation Benefits
-1. Full AXI4 specification compliance
+1. Full AXI specification compliance
 2. Efficient resource utilization
 3. Flexible configuration options
 4. Robust error handling
@@ -136,7 +136,7 @@ Suitable for:
 
 ## Future Enhancements
 Potential areas for expansion:
-1. AXI4-Lite interface addition
+1. AXI4 interface addition
 2. Quality of Service (QoS) implementation
 3. Protection mechanism integration
 4. Cache coherency support
