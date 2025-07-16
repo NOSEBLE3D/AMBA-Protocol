@@ -4,6 +4,197 @@ module axi4_top_tb();
     // Clock and Reset
     reg clk;
     reg reset;
+
+    // User Interface Control
+    reg         wr_tx;
+    reg         rd_tx;
+    wire        wr_done;
+    wire        rd_done;
+    wire        rd_data_valid;
+
+    // Write Interface
+    reg [31:0]  wr_addr;
+    reg [7:0]   wr_len;
+    reg [2:0]   wr_size;
+    reg [1:0]   wr_burst;
+    reg [31:0]  wr_data;
+
+    // Read Interface
+    reg [31:0]  rd_addr;
+    reg [7:0]   rd_len;
+    reg [2:0]   rd_size;
+    reg [1:0]   rd_burst;
+    wire [31:0] rd_data;
+
+    // DUT instance
+    axi4_top dut (
+        .clk(clk),
+        .reset(reset),
+        .wr_tx(wr_tx),
+        .rd_tx(rd_tx),
+        .wr_done(wr_done),
+        .rd_done(rd_done),
+        .rd_data_valid(rd_data_valid),
+        .wr_addr(wr_addr),
+        .wr_len(wr_len),
+        .wr_size(wr_size),
+        .wr_burst(wr_burst),
+        .wr_data(wr_data),
+        .rd_addr(rd_addr),
+        .rd_len(rd_len),
+        .rd_size(rd_size),
+        .rd_burst(rd_burst),
+        .rd_data(rd_data)
+    );
+
+    // Clock generation
+    initial begin
+        clk = 0;
+        forever #5 clk = ~clk;
+    end
+
+    integer data_count, error_count;
+    reg [31:0] expected_rdata;
+
+    // Write transaction task
+    task write_burst_transaction;
+        input [31:0] addr;
+        input [7:0]  len;
+        input [1:0]  burst;
+       // input [31:0] start_data;
+        integer beat;
+        reg [31:0] data_word;
+        begin
+          //  $display("\nStarting Write Burst: Addr = %h, Len = %0d, Burst = %0d, StartData = %h", addr, len, burst, start_data);
+            @(posedge clk);
+            wr_tx = 1;
+            wr_addr = addr;
+            wr_len  = len;
+            wr_size = 3'b010;  // 4 bytes
+            wr_burst = burst;
+            @(posedge clk);
+            wr_tx = 0;
+
+            wait(dut.AWVALID);
+            for (beat = 0; beat <= len; beat = beat + 1) begin
+		data_word = $random;
+               /* case (burst)
+                    2'b00: data_word = start_data;
+                    2'b01: data_word = start_data + beat;
+                    2'b10: data_word = start_data + (beat % (len + 1));
+                    default: data_word = start_data;
+                endcase */
+                wr_data = data_word;
+                wait(dut.WVALID && dut.WREADY);
+                @(posedge clk);
+            end
+            wr_data = 32'b0;
+            wait(wr_done);
+            @(posedge clk);
+            $display("Write Burst Complete at time %0t", $time);
+        end
+    endtask
+
+    // Read transaction task
+    task read_burst_transaction;
+        input [31:0] addr;
+        input [7:0]  len;
+        input [1:0]  burst;
+       // input [31:0] exp_start_data;
+        begin
+            $display("\nStarting Read Burst: Addr = %h, Len = %0d, Burst = %0d", addr, len, burst);
+            @(posedge clk);
+            rd_tx = 1;
+            rd_addr = addr;
+            rd_len  = len;
+            rd_size = 3'b010;
+            rd_burst = burst;
+            @(posedge clk);
+            rd_tx = 0;
+
+            data_count = 0;
+            wait(dut.ARREADY);  // Ensure ARREADY handshake before read data starts
+
+            while (data_count <= len) begin
+                @(posedge clk);
+                if (rd_data_valid) begin
+                    /*case (burst)
+                        2'b00: expected_rdata = exp_start_data;
+                        2'b01: expected_rdata = exp_start_data + data_count;
+                        2'b10: expected_rdata = exp_start_data + (data_count % (len + 1));
+                        default: expected_rdata = exp_start_data;
+                    endcase*/
+
+                    if (rd_data !== expected_rdata) begin
+                        $display("Mismatch at beat %0d: Expected = %h, Got = %h", data_count, expected_rdata, rd_data);
+                        error_count = error_count + 1;
+                    end else begin
+                        $display("Read Data[%0d] = %h", data_count, rd_data);
+                    end
+                    data_count = data_count + 1;
+                end
+            end
+            wait(rd_done);
+            $display("Read Burst Complete at time %0t", $time);
+        end
+    endtask
+
+    // Main test sequence
+    initial begin
+        reset = 1;
+	rd_addr <= 32'h0000;
+	rd_len = 8'b0;
+	rd_size = 3'b0;
+	rd_burst = 2'b0;
+	wr_addr = 31'h0000;
+	wr_burst = 2'b00;
+	wr_len = 8'b0;
+	wr_size = 3'b0;
+        wr_tx = 0;
+        rd_tx = 0;
+        wr_data = 32'h0;
+        error_count = 0;
+        #100 reset = 0;
+        #50;
+
+        write_burst_transaction(32'h0000, 8'h0, 2'b00);
+        #20;
+        write_burst_transaction(32'h0004, 8'h5, 2'b01);
+        #20;
+        write_burst_transaction(32'd48, 8'h7, 2'b10);
+        #20;
+
+        read_burst_transaction(32'h0000, 8'h0, 2'b00);
+        #20;
+        read_burst_transaction(32'h0004, 8'h5, 2'b01);
+        #20;
+        read_burst_transaction(32'd48, 8'h7, 2'b10);
+        #50;
+
+        if (error_count == 0)
+            $display("\nTest PASSED with no errors.");
+        else
+            $display("\nTest FAILED with %0d errors.", error_count);
+
+        $finish;
+    end
+
+    always @(posedge clk) begin
+        if (!reset) begin
+            if (wr_done) $display("Write Done at %0t", $time);
+            if (rd_done) $display("Read Done at %0t", $time);
+            if (rd_data_valid) $display("Read Data: %h at %0t", rd_data, $time);
+        end
+    end
+endmodule
+
+
+/*`timescale 1ns/1ps
+
+module axi4_top_tb();
+    // Clock and Reset
+    reg clk;
+    reg reset;
     
     // User Interface Control
     reg         wr_tx;
