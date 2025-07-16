@@ -3,6 +3,61 @@
 module Slave(
     input PCLK,
     input PRESET,
+    input [3:0] PSTRB,
+    input PSEL,
+    input PENABLE,
+    input [7:0] PADDR,
+    input [31:0] PWDATA,
+    input PWRITE,
+    output reg PSLVERR,
+    output reg PREADY,
+    output reg [31:0] PRDATA
+);
+
+reg [31:0] mem [0:255];
+integer i;
+
+always@(posedge PCLK or negedge PRESET)begin
+    if(!PRESET)begin
+        PREADY <= 0;
+        PRDATA <= 0;
+	    for(i=0; i<256; i=i+1)
+		mem[i] <= 0;
+    end
+    else begin
+        if(PSEL && PENABLE)begin
+            PREADY <= 1;
+            if(PWRITE)begin
+                // Byte-wise update using PSTRB
+                if (PSTRB[0]) mem[PADDR][7:0]   <= PWDATA[7:0];
+                if (PSTRB[1]) mem[PADDR][15:8]  <= PWDATA[15:8];
+                if (PSTRB[2]) mem[PADDR][23:16] <= PWDATA[23:16];
+                if (PSTRB[3]) mem[PADDR][31:24] <= PWDATA[31:24];
+            end
+            else begin
+                PRDATA <= mem[PADDR];
+            end   
+        end
+        else begin
+            PREADY <= 0;
+        end 
+    end
+end
+
+always@(*)begin
+	if((PADDR > 8'hFF) || (PADDR === 8'bXX))
+		PSLVERR = 1'b1;
+	else
+		PSLVERR = 1'b0;
+end
+
+endmodule
+
+/*`timescale 1ns/1ps
+
+module Slave(
+    input PCLK,
+    input PRESET,
     input PSEL,
     input PENABLE,
     input PWRITE,
